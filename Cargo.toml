@@ -1,0 +1,12 @@
+[package]
+name = "ms5803-14ba"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+defmt = { version = "0.3.10", optional = true }
+embedded-hal-async = "1.0.0"
+
+[features]
+default = []
+logging = ["defmt"]
