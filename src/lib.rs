@@ -37,26 +37,30 @@ macro_rules! defmt {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Measurement {
-    /// Temperature measured in hundreds of a degree celsius
+    /// Temperature measured in hundredths of a degree celsius. E.g. `2145` represents 21.45 °C 
     pub temperature: i64,
-    /// Pressure measured in tenth on a millibar.
+    /// Pressure measured in tenth on a millibar. E.g. `10245` represents 1024.5 mbar or 1.0245 bar
     pub pressure: i64,
 }
 
 impl Measurement {
+    /// Pressure in millibar
     pub fn mbar(&self) -> f32 {
         self.pressure as f32 / 10.0
     }
 
+    /// Pressure in bar
     pub fn bar(&self) -> f32 {
         self.mbar() / 1000.0
     }
 
+    /// Temperature in °C
     pub fn celsius(&self) -> f32 {
         self.temperature as f32 / 100.0
     }
 
-    pub fn farenheit(&self) -> f32 {
+    /// Temperature in °F
+    pub fn fahrenheit(&self) -> f32 {
         self.celsius() * 9.0 / 5.0 + 32.0
     }
 }
