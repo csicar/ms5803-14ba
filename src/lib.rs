@@ -229,7 +229,7 @@ mod test {
 
     /// Mock test with the example values given in the data sheet
     #[tokio::test]
-    async fn test() -> Result<(), ()> {
+    async fn i2c_example_from_datasheet() -> Result<(), ()> {
         // assert_eq!(46546u16.to_be_bytes(), [0xB5, 0xF2]);
         let expectations = [
             // Reset
@@ -272,5 +272,14 @@ mod test {
         sensor.i2c.done();
 
         Ok(())
+    }
+
+    #[test]
+    fn measurement_conversions_are_correct() {
+        let measurement = Measurement { temperature: 2015, pressure: 10005 };
+        assert_eq!(measurement.bar(), 1.0005);
+        assert_eq!(measurement.mbar(), 1000.5);
+        assert_eq!(measurement.celsius(), 20.15);
+        assert_eq!(measurement.fahrenheit(), 68.27);
     }
 }
