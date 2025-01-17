@@ -1,12 +1,13 @@
 [package]
 name = "ms5803-14ba"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 description = "embedded-hal async driver for the MS5803-14BA pressure sensor"
 homepage = "https://github.com/csicar/ms5803-14ba"
 repository = "https://github.com/csicar/ms5803-14ba"
 categories = ["embedded", "no-std"]
+keywords = ["embedded-hal", "ms5803", "ms5803014ba"]
 
 [dependencies]
 defmt = { version = "0.3.10", optional = true }
