@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::i2c::I2c;
@@ -178,22 +178,90 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
             off2 = (temperature as i64 - 2000).pow(2) / 2i64.pow(4);
             sens2 = 0;
         }
-        defmt!(trace!("Without second order values {} {} {}", temperature, off, sens));
+        defmt!(trace!(
+            "Without second order values {} {} {}",
+            temperature,
+            off,
+            sens
+        ));
         // Use second order correction values
         let temperature = temperature - t2 as i32;
         let off = off - off2;
         let sens = sens - sens2;
-        defmt!(trace!("Corrected with second order values {} {} {}", temperature, off, sens));
+        defmt!(trace!(
+            "Corrected with second order values {} {} {}",
+            temperature,
+            off,
+            sens
+        ));
 
         // Temperature compensated pressure (0…14bar with 0.1mbar resolution)
         let pressure: i64 = (d1 as i64 * sens / 2i64.pow(21) - off) / 2i64.pow(15);
 
-        defmt!(trace!("Got Temperature {} and Pressure {}", temperature, pressure));
+        defmt!(trace!(
+            "Got Temperature {} and Pressure {}",
+            temperature,
+            pressure
+        ));
 
         // TODO second degree correction
         Ok(Measurement {
             temperature,
             pressure,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use embedded_hal_async::i2c::{Error, ErrorKind, I2c, Operation};
+    use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
+
+    /// Mock test with the example values given in the data sheet
+    #[tokio::test]
+    async fn test() -> Result<(), ()> {
+        // assert_eq!(46546u16.to_be_bytes(), [0xB5, 0xF2]);
+        let expectations = [
+            // Reset
+            I2cTransaction::write(0x76, vec![0x1e]),
+            // Read calibration values
+            I2cTransaction::write_read(0x76, vec![0xa0], vec![0x13, 0x37]),
+            I2cTransaction::write_read(0x76, vec![0xa2], 46546u16.to_be_bytes().to_vec()),
+            I2cTransaction::write_read(0x76, vec![0xa4], 42845u16.to_be_bytes().to_vec()),
+            I2cTransaction::write_read(0x76, vec![0xa6], 29751u16.to_be_bytes().to_vec()),
+            I2cTransaction::write_read(0x76, vec![0xa8], 29457u16.to_be_bytes().to_vec()),
+            I2cTransaction::write_read(0x76, vec![0xaa], 32745u16.to_be_bytes().to_vec()),
+            I2cTransaction::write_read(0x76, vec![0xac], 29059u16.to_be_bytes().to_vec()),
+            I2cTransaction::write_read(0x76, vec![0xae], 0x1337u16.to_be_bytes().to_vec()),
+        ];
+        let i2c = I2cMock::new(&expectations);
+
+        let mut sensor = PressureSensorDriver::new(
+            i2c,
+            embedded_hal_mock::eh1::delay::StdSleep,
+            DEFAULT_SENSOR_ADDRESS,
+        );
+
+        sensor.init().await.unwrap();
+
+        // Read sensor
+        sensor.i2c.update_expectations(&[
+            // -> Read D1
+            I2cTransaction::write(0x76, vec![0x48]),
+            I2cTransaction::write_read(0x76, vec![0x00], 4311550u32.to_be_bytes()[1..].to_vec()),
+            // -> Read D2
+            I2cTransaction::write(0x76, vec![0x58]),
+            I2cTransaction::write_read(0x76, vec![0x00], 8387300u32.to_be_bytes()[1..].to_vec()),
+        ]);
+
+        let measurement = sensor.read().await.unwrap();
+
+        assert_eq!(measurement.temperature, 2015);
+        assert_eq!(measurement.pressure, 10005);
+
+        sensor.i2c.done();
+
+        Ok(())
     }
 }
