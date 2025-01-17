@@ -197,15 +197,3 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         })
     }
 }
-
-#[cfg("test")]
-mod test {
-    struct I2c {
-        
-    }
-
-    #[test]
-    fn test() {
-
-    }
-}
