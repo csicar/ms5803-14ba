@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "ms5803-14ba"
-version = "0.2.2"
+version = "0.3.2"
 dependencies = [
  "defmt",
  "embedded-hal 1.0.0",
