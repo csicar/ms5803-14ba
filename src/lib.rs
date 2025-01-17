@@ -1,7 +1,15 @@
 #![cfg_attr(not(test), no_std)]
 
+#[cfg(feature = "sync")]
+use embedded_hal::delay::DelayNs;
+#[cfg(feature="sync")]
+use embedded_hal::i2c::I2c;
+
+#[cfg(not(feature="sync"))]
 use embedded_hal_async::delay::DelayNs;
+#[cfg(not(feature="sync"))]
 use embedded_hal_async::i2c::I2c;
+use maybe_async::maybe_async;
 
 // As per https://cdn.sparkfun.com/datasheets/Sensors/Weather/ms5803_14ba.pdf ; Page 6
 pub const DEFAULT_SENSOR_ADDRESS: u8 = 0x76;
@@ -26,17 +34,11 @@ macro_rules! defmt {
         }
     };
 }
-pub struct PressureSensorDriver<I2cImpl: I2c, DelayImpl: DelayNs> {
-    i2c: I2cImpl,
-    delay: DelayImpl,
-    calibration: [u16; 8],
-    sensor_address: u8,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Measurement {
     /// Temperature measured in hundreds of a degree celsius
-    pub temperature: i32,
+    pub temperature: i64,
     /// Pressure measured in tenth on a millibar.
     pub pressure: i64,
 }
@@ -59,6 +61,14 @@ impl Measurement {
     }
 }
 
+pub struct PressureSensorDriver<I2cImpl: I2c, DelayImpl: DelayNs> {
+    i2c: I2cImpl,
+    delay: DelayImpl,
+    calibration: [u16; 8],
+    sensor_address: u8,
+}
+
+#[maybe_async]
 impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> {
     pub fn new(i2c: I2cImpl, delay: DelayImpl, sensor_address: u8) -> Self {
         PressureSensorDriver {
@@ -142,16 +152,16 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         let _serial_code_and_crc = self.calibration[7];
 
         // Difference between actual and reference temperature
-        let d_t = (d2 as i32) - c5 as i32 * 2i32.pow(8);
-
+        let d_t = (d2 as i64) - c5 as i64 * 2i64.pow(8);
+        
         // Actual temperature (-40…85°C with 0.01°C resolution)
-        let temperature = 2_000 + (d_t * c6 as i32) / 2i32.pow(23);
+        let temperature: i64 = 2_000 + (d_t * c6 as i64) / 2i64.pow(23);
 
         // Offset at actual temperature
-        let off = c2 as i64 * 2i64.pow(16) + (c4 as i64 * d_t as i64) / 2i64.pow(7);
+        let off = c2 as i64 * 2i64.pow(16) + (c4 as i64 * d_t) / 2i64.pow(7);
 
         // Sensitivity at actual temperature
-        let sens = c1 as i64 * 2i64.pow(15) + (c3 as i64 * d_t as i64) / 2i64.pow(8);
+        let sens = c1 as i64 * 2i64.pow(15) + (c3 as i64 * d_t) / 2i64.pow(8);
 
         //
         // SECOND ORDER TEMPERATURE COMPENSATION
@@ -161,17 +171,17 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         let t2;
         if temperature < 2000 {
             // Low temperature
-            t2 = 3 * (d_t as i64).pow(2) / 2i64.pow(33);
-            off2 = 3 * (temperature as i64 - 2000).pow(2) / 2;
-            sens2 = 5 * (temperature as i64 - 2000).pow(2) / 2i64.pow(3);
+            t2 = 3 * (d_t).pow(2) / 2i64.pow(33);
+            off2 = 3 * (temperature - 2000).pow(2) / 2;
+            sens2 = 5 * (temperature - 2000).pow(2) / 2i64.pow(3);
             if temperature < -1500 {
-                off2 -= 7 * (temperature as i64 + 1500).pow(2);
-                sens2 += 4 * (temperature as i64 + 1500).pow(2);
+                off2 -= 7 * (temperature + 1500).pow(2);
+                sens2 += 4 * (temperature + 1500).pow(2);
             }
         } else {
             // High temperature
-            t2 = 7 * (d_t as i64).pow(2) / 2i64.pow(37);
-            off2 = (temperature as i64 - 2000).pow(2) / 2i64.pow(4);
+            t2 = 7 * (d_t).pow(2) / 2i64.pow(37);
+            off2 = (temperature - 2000).pow(2) / 2i64.pow(4);
             sens2 = 0;
         }
         defmt!(trace!(
@@ -181,7 +191,7 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
             sens
         ));
         // Use second order correction values
-        let temperature = temperature - t2 as i32;
+        let temperature = temperature - t2;
         let off = off - off2;
         let sens = sens - sens2;
         defmt!(trace!(
@@ -211,7 +221,6 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
 #[cfg(test)]
 mod test {
     use super::*;
-    use embedded_hal_async::i2c::I2c;
     use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
 
     /// Mock test with the example values given in the data sheet
