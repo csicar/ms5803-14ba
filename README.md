@@ -1,4 +1,4 @@
-# `embedded-hal` async driver for the MS5803-14BA pressure sensor
+# `embedded-hal` async and sync driver for the MS5803-14BA pressure sensor
 
 This library provides a driver for the [MS5803-14BA](https://cdn.sparkfun.com/datasheets/Sensors/Weather/ms5803_14ba.pdf) pressure sensor using the `embedded-hal` async abstractions over I2C and Delay.
 
@@ -48,3 +48,16 @@ INFO  Sensor t = 19.46°C  p = 1.0187bar
 INFO  Sensor t = 19.46°C  p = 1.0190bar
 ...
 ```
+
+more examples can be found [here](./examples/)
+
+The examples use an esp32c3 with embassy. You can use any other `embedded-hal` impl though.
+
+Pins are connected like this:
+
+esp32-c3 pin | ms5803 sensor
+------------ | -------------
+GPIO6        | SDA
+GPIO1        | SCL
+3V3          | 3V3
+GND          | GND
