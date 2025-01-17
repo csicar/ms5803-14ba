@@ -30,11 +30,11 @@ sensor.init().await.unwrap();
 
 loop {
     // Real value
-    let (temperature, pressure) = sensor.read().await.unwrap();
+    let measurement = sensor.read().await.unwrap();
     let result = format!(
         "Sensor t = {:.2}°C  p = {:.4}bar",
-        temperature as f32 / 100.0,
-        pressure as f32 / 10000.0,
+        measurement.celsius(),
+        measurement.bar(),
     );
     info!("{=str}", &result);
     Timer::after(Duration::from_secs(1)).await;

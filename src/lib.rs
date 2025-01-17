@@ -1,5 +1,8 @@
 #![no_std]
 
+use embedded_hal_async::delay::DelayNs;
+use embedded_hal_async::i2c::I2c;
+
 // As per https://cdn.sparkfun.com/datasheets/Sensors/Weather/ms5803_14ba.pdf ; Page 6
 pub const DEFAULT_SENSOR_ADDRESS: u8 = 0x76;
 pub const SECONDARY_SENSOR_ADDRESS: u8 = 0x77;
@@ -8,8 +11,6 @@ const CONVERT_D1: u8 = 0x48;
 const CONVERT_D2: u8 = 0x58;
 const ADC_READ: u8 = 0x00;
 const PROM_READ: u8 = 0xA0;
-
-use embedded_hal_async::delay::DelayNs;
 
 macro_rules! defmt {
     ($body:expr) => {
@@ -32,7 +33,31 @@ pub struct PressureSensorDriver<I2cImpl: I2c, DelayImpl: DelayNs> {
     sensor_address: u8,
 }
 
-use embedded_hal_async::i2c::I2c;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Measurement {
+    /// Temperature measured in hundreds of a degree celsius
+    pub temperature: i32,
+    /// Pressure measured in tenth on a millibar.
+    pub pressure: i64,
+}
+
+impl Measurement {
+    pub fn mbar(&self) -> f32 {
+        self.pressure as f32 / 10.0
+    }
+
+    pub fn bar(&self) -> f32 {
+        self.mbar() / 1000.0
+    }
+
+    pub fn celsius(&self) -> f32 {
+        self.temperature as f32 / 100.0
+    }
+
+    pub fn farenheit(&self) -> f32 {
+        self.celsius() * 9.0 / 5.0 + 32.0
+    }
+}
 
 impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> {
     pub fn new(i2c: I2cImpl, delay: DelayImpl, sensor_address: u8) -> Self {
@@ -49,7 +74,7 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         self.i2c
             .write(self.sensor_address, &[RESET_COMMAND])
             .await?;
-        
+
         for i in 0..8 {
             self.delay.delay_ms(3).await;
 
@@ -67,7 +92,6 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
             self.calibration
         ));
 
-
         // OSR = 4096 -> need to wait at least 9ms
         self.delay.delay_ms(10).await;
         self.i2c.write(self.sensor_address, &[CONVERT_D1]).await?;
@@ -75,7 +99,7 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         Ok(())
     }
 
-    pub async fn read(&mut self) -> Result<(i32, i64), I2cImpl::Error> {
+    pub async fn read(&mut self) -> Result<Measurement, I2cImpl::Error> {
         // OSR = 4096 -> need to wait at least 9ms
         self.delay.delay_ms(10).await;
 
@@ -107,11 +131,17 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         ]);
 
         let _reserved = self.calibration[0];
+        // Pressure sensitivity | SENS T1
         let c1 = self.calibration[1];
+        // Pressure offset | OFF T1
         let c2 = self.calibration[2];
+        // Temperature coefficient of pressure sensitivity | TCS
         let c3 = self.calibration[3];
+        // Temperature coefficient of pressure offset | TCO
         let c4 = self.calibration[4];
+        // Reference temperature | T REF
         let c5 = self.calibration[5];
+        // Temperature coefficient of the temperature | TEMPSENS
         let c6 = self.calibration[6];
         let _serial_code_and_crc = self.calibration[7];
 
@@ -127,12 +157,43 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
         // Sensitivity at actual temperature
         let sens = c1 as i64 * 2i64.pow(15) + (c3 as i64 * d_t as i64) / 2i64.pow(8);
 
-        // Temperature compensated pressure (0…14bar with 0.1mbar resolution)
-        let p: i64 = (d1 as i64 * sens / 2i64.pow(21) - off) / 2i64.pow(15);
+        //
+        // SECOND ORDER TEMPERATURE COMPENSATION
+        //
+        let mut off2;
+        let mut sens2;
+        let t2;
+        if temperature < 2000 {
+            // Low temperature
+            t2 = 3 * (d_t as i64).pow(2) / 2i64.pow(33);
+            off2 = 3 * (temperature as i64 - 2000).pow(2) / 2;
+            sens2 = 5 * (temperature as i64 - 2000).pow(2) / 2i64.pow(3);
+            if temperature < -1500 {
+                off2 -= 7 * (temperature as i64 + 1500).pow(2);
+                sens2 += 4 * (temperature as i64 + 1500).pow(2);
+            }
+        } else {
+            // High temperature
+            t2 = 7 * (d_t as i64).pow(2) / 2i64.pow(37);
+            off2 = (temperature as i64 - 2000).pow(2) / 2i64.pow(4);
+            sens2 = 0;
+        }
+        defmt!(info!("Withoust second order values {} {} {}", temperature, off, sens));
+        // Use second order correction values
+        let temperature = temperature - t2 as i32;
+        let off = off - off2;
+        let sens = sens - sens2;
+        defmt!(info!("Correct with second order values {} {} {}", temperature, off, sens));
 
-        defmt!(trace!("Got Temperature {} and Pressure {}", temperature, p));
+        // Temperature compensated pressure (0…14bar with 0.1mbar resolution)
+        let pressure: i64 = (d1 as i64 * sens / 2i64.pow(21) - off) / 2i64.pow(15);
+
+        defmt!(trace!("Got Temperature {} and Pressure {}", temperature, pressure));
 
         // TODO second degree correction
-        Ok((temperature, p))
+        Ok(Measurement {
+            temperature,
+            pressure,
+        })
     }
 }
