@@ -178,12 +178,12 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
             off2 = (temperature as i64 - 2000).pow(2) / 2i64.pow(4);
             sens2 = 0;
         }
-        defmt!(info!("Withoust second order values {} {} {}", temperature, off, sens));
+        defmt!(trace!("Without second order values {} {} {}", temperature, off, sens));
         // Use second order correction values
         let temperature = temperature - t2 as i32;
         let off = off - off2;
         let sens = sens - sens2;
-        defmt!(info!("Correct with second order values {} {} {}", temperature, off, sens));
+        defmt!(trace!("Corrected with second order values {} {} {}", temperature, off, sens));
 
         // Temperature compensated pressure (0…14bar with 0.1mbar resolution)
         let pressure: i64 = (d1 as i64 * sens / 2i64.pow(21) - off) / 2i64.pow(15);
