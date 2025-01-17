@@ -92,10 +92,6 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
             self.calibration
         ));
 
-        // OSR = 4096 -> need to wait at least 9ms
-        self.delay.delay_ms(10).await;
-        self.i2c.write(self.sensor_address, &[CONVERT_D1]).await?;
-
         Ok(())
     }
 
