@@ -211,7 +211,7 @@ impl<I2cImpl: I2c, DelayImpl: DelayNs> PressureSensorDriver<I2cImpl, DelayImpl> 
 #[cfg(test)]
 mod test {
     use super::*;
-    use embedded_hal_async::i2c::{Error, ErrorKind, I2c, Operation};
+    use embedded_hal_async::i2c::I2c;
     use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
 
     /// Mock test with the example values given in the data sheet
